@@ -90,14 +90,23 @@ int gdsl_diff(const uint8_t *base,
             continue;
         }
 
-        const uint8_t *base_ptr = page_offset < base_length ? base + page_offset : NULL;
-        size_t base_available = base_ptr ? min_size(span, base_length - page_offset) : 0;
+        size_t target_span = 0;
+        if (page_offset < target_length) {
+            size_t remaining = target_length - page_offset;
+            target_span = min_size(span, remaining);
+        }
+        if (target_span == 0) {
+            continue;
+        }
 
-        const uint8_t *target_ptr = page_offset < target_length ? target + page_offset : NULL;
-        size_t target_available = target_ptr ? min_size(span, target_length - page_offset) : 0;
+        const uint8_t *base_ptr = page_offset < base_length ? base + page_offset : NULL;
+        size_t base_available = base_ptr ? min_size(target_span, base_length - page_offset) : 0;
+
+        const uint8_t *target_ptr = (target && target_span > 0) ? target + page_offset : NULL;
+        size_t target_available = target_ptr ? target_span : 0;
 
         int changed = 0;
-        for (size_t i = 0; i < span; ++i) {
+        for (size_t i = 0; i < target_span; ++i) {
             uint8_t base_byte = (i < base_available) ? base_ptr[i] : 0;
             uint8_t target_byte = (i < target_available) ? target_ptr[i] : 0;
             if (base_byte != target_byte) {
@@ -108,7 +117,7 @@ int gdsl_diff(const uint8_t *base,
 
         if (changed) {
             chunk_count++;
-            payload_size += span;
+            payload_size += target_span;
         }
     }
 
@@ -136,14 +145,23 @@ int gdsl_diff(const uint8_t *base,
             continue;
         }
 
-        const uint8_t *base_ptr = page_offset < base_length ? base + page_offset : NULL;
-        size_t base_available = base_ptr ? min_size(span, base_length - page_offset) : 0;
+        size_t target_span = 0;
+        if (page_offset < target_length) {
+            size_t remaining = target_length - page_offset;
+            target_span = min_size(span, remaining);
+        }
+        if (target_span == 0) {
+            continue;
+        }
 
-        const uint8_t *target_ptr = page_offset < target_length ? target + page_offset : NULL;
-        size_t target_available = target_ptr ? min_size(span, target_length - page_offset) : 0;
+        const uint8_t *base_ptr = page_offset < base_length ? base + page_offset : NULL;
+        size_t base_available = base_ptr ? min_size(target_span, base_length - page_offset) : 0;
+
+        const uint8_t *target_ptr = (target && target_span > 0) ? target + page_offset : NULL;
+        size_t target_available = target_ptr ? target_span : 0;
 
         int changed = 0;
-        for (size_t i = 0; i < span; ++i) {
+        for (size_t i = 0; i < target_span; ++i) {
             uint8_t base_byte = (i < base_available) ? base_ptr[i] : 0;
             uint8_t target_byte = (i < target_available) ? target_ptr[i] : 0;
             if (base_byte != target_byte) {
@@ -158,15 +176,15 @@ int gdsl_diff(const uint8_t *base,
 
         gdsl_diff_chunk_t *chunk = &out->chunks[emitted];
         chunk->page_index = page_index;
-        chunk->length = span;
+        chunk->length = target_span;
         chunk->data_offset = payload_offset;
 
-        for (size_t i = 0; i < span; ++i) {
+        for (size_t i = 0; i < target_span; ++i) {
             uint8_t value = (i < target_available) ? target_ptr[i] : 0;
             out->payload[payload_offset + i] = value;
         }
 
-        payload_offset += span;
+        payload_offset += target_span;
         emitted++;
     }
 
@@ -197,11 +215,25 @@ int gdsl_patch(const uint8_t *base,
     size_t buffer_length = result_length;
     for (size_t i = 0; i < diff->chunk_count; ++i) {
         const gdsl_diff_chunk_t *chunk = &diff->chunks[i];
-        size_t end_offset = chunk->page_index * page_size + chunk->length;
-        if (end_offset > buffer_length) {
-            buffer_length = end_offset;
+
+        if (chunk->length > page_size) {
+            return -1;
         }
-        if (chunk->data_offset + chunk->length > diff->payload_length) {
+        if (chunk->data_offset > diff->payload_length) {
+            return -1;
+        }
+        if (diff->payload_length - chunk->data_offset < chunk->length) {
+            return -1;
+        }
+
+        if (page_size != 0 && chunk->page_index > SIZE_MAX / page_size) {
+            return -1;
+        }
+        size_t offset = chunk->page_index * page_size;
+        if (offset > buffer_length) {
+            return -1;
+        }
+        if (buffer_length - offset < chunk->length) {
             return -1;
         }
     }
@@ -223,15 +255,11 @@ int gdsl_patch(const uint8_t *base,
     for (size_t i = 0; i < diff->chunk_count; ++i) {
         const gdsl_diff_chunk_t *chunk = &diff->chunks[i];
         size_t offset = chunk->page_index * page_size;
-        size_t limit = chunk->length;
-        if (offset + limit > buffer_length) {
-            limit = buffer_length - offset;
-        }
-        memcpy(buffer + offset, diff->payload + chunk->data_offset, limit);
+        memcpy(buffer + offset, diff->payload + chunk->data_offset, chunk->length);
     }
 
     *out_buffer = buffer;
-    *out_length = buffer_length;
+    *out_length = result_length;
     return 0;
 }
 
