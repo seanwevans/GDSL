@@ -1,5 +1,6 @@
 #include "gdsl/diff.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,6 +16,32 @@ static size_t page_count_for_length(size_t length, size_t page_size) {
 
 static size_t min_size(size_t a, size_t b) {
     return a < b ? a : b;
+}
+
+static int checked_mul(size_t a, size_t b, size_t *out) {
+    if (!out) {
+        return -1;
+    }
+    if (a == 0 || b == 0) {
+        *out = 0;
+        return 0;
+    }
+    if (a > SIZE_MAX / b) {
+        return -1;
+    }
+    *out = a * b;
+    return 0;
+}
+
+static int checked_add(size_t a, size_t b, size_t *out) {
+    if (!out) {
+        return -1;
+    }
+    if (a > SIZE_MAX - b) {
+        return -1;
+    }
+    *out = a + b;
+    return 0;
 }
 
 void gdsl_diff_result_destroy(gdsl_diff_result_t *result) {
@@ -206,60 +233,90 @@ int gdsl_patch(const uint8_t *base,
     if (!diff || !out_buffer || !out_length) {
         return -1;
     }
-    if (diff->header.page_size == 0) {
+
+    *out_buffer = NULL;
+    *out_length = 0;
+
+    size_t target_length = diff->header.target_length;
+    size_t page_size = diff->header.page_size ? diff->header.page_size
+                                              : GDSL_DEFAULT_PAGE_SIZE;
+
+    if (diff->chunk_count > 0) {
+        if (!diff->chunks) {
+            return -1;
+        }
+        if (diff->payload_length == 0 || !diff->payload) {
+            for (size_t i = 0; i < diff->chunk_count; ++i) {
+                if (diff->chunks[i].length > 0) {
+                    return -1;
+                }
+            }
+        }
+    }
+
+    if (target_length == 0) {
+        if (diff->chunk_count != 0) {
+            return -1;
+        }
+        return 0;
+    }
+
+    uint8_t *buffer = (uint8_t *)malloc(target_length);
+    if (!buffer) {
         return -1;
     }
 
-    size_t page_size = diff->header.page_size;
-    size_t result_length = diff->header.target_length;
-    size_t buffer_length = result_length;
-    for (size_t i = 0; i < diff->chunk_count; ++i) {
-        const gdsl_diff_chunk_t *chunk = &diff->chunks[i];
-
-        if (chunk->length > page_size) {
-            return -1;
-        }
-        if (chunk->data_offset > diff->payload_length) {
-            return -1;
-        }
-        if (diff->payload_length - chunk->data_offset < chunk->length) {
-            return -1;
-        }
-
-        if (page_size != 0 && chunk->page_index > SIZE_MAX / page_size) {
-            return -1;
-        }
-        size_t offset = chunk->page_index * page_size;
-        if (offset > buffer_length) {
-            return -1;
-        }
-        if (buffer_length - offset < chunk->length) {
-            return -1;
-        }
-    }
-
-    uint8_t *buffer = (uint8_t *)malloc(buffer_length);
-    if (!buffer && buffer_length > 0) {
-        return -1;
-    }
-
-    if (buffer_length > 0) {
-        memset(buffer, 0, buffer_length);
-    }
-
+    memset(buffer, 0, target_length);
     if (base && base_length > 0) {
-        size_t copy = base_length < buffer_length ? base_length : buffer_length;
+        size_t copy = min_size(base_length, target_length);
         memcpy(buffer, base, copy);
     }
 
     for (size_t i = 0; i < diff->chunk_count; ++i) {
         const gdsl_diff_chunk_t *chunk = &diff->chunks[i];
-        size_t offset = chunk->page_index * page_size;
-        memcpy(buffer + offset, diff->payload + chunk->data_offset, chunk->length);
+        size_t page_offset = 0;
+        if (checked_mul(chunk->page_index, page_size, &page_offset) != 0) {
+            free(buffer);
+            return -1;
+        }
+        if (page_offset > target_length) {
+            free(buffer);
+            return -1;
+        }
+        size_t end_offset = 0;
+        if (checked_add(page_offset, chunk->length, &end_offset) != 0) {
+            free(buffer);
+            return -1;
+        }
+        if (end_offset > target_length) {
+            free(buffer);
+            return -1;
+        }
+        if (chunk->length > 0) {
+            if (!diff->payload ||
+                chunk->data_offset > diff->payload_length) {
+                free(buffer);
+                return -1;
+            }
+            size_t payload_end = 0;
+            if (checked_add(chunk->data_offset, chunk->length, &payload_end) !=
+                0) {
+                free(buffer);
+                return -1;
+            }
+            if (payload_end > diff->payload_length) {
+                free(buffer);
+                return -1;
+            }
+
+            memcpy(buffer + page_offset,
+                   diff->payload + chunk->data_offset,
+                   chunk->length);
+        }
     }
 
     *out_buffer = buffer;
-    *out_length = result_length;
+    *out_length = target_length;
     return 0;
 }
 
@@ -271,16 +328,22 @@ int gdsl_read_changed_set(const gdsl_diff_result_t *diff,
         return -1;
     }
 
-    size_t count = diff->chunk_count;
+    if (diff->chunk_count > 0 && !diff->chunks) {
+        return -1;
+    }
+
+    size_t unique_pages = diff->chunk_count;
+
     if (out_pages) {
-        if (count > max_pages) {
+        if (max_pages < unique_pages) {
             return -1;
         }
-        for (size_t i = 0; i < count; ++i) {
+        for (size_t i = 0; i < unique_pages; ++i) {
             out_pages[i] = diff->chunks[i].page_index;
         }
     }
 
-    *out_count = count;
+    *out_count = unique_pages;
     return 0;
 }
+
