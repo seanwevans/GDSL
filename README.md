@@ -1,13 +1,3 @@
-# GDSL Formal Verifier Specification
-
-**Version:** 1.0 (v1 single-queue, single-device)  
-**Status:** Implementation-ready  
-**Last updated:** 2025-10-31
-
----
-
-## 0. Conformance & Determinism
-
 ### Conformance Levels
 
 The verifier implements three tiers of checking:
