@@ -123,12 +123,78 @@ static void test_rejects_invalid_metadata(void) {
     assert(rc != 0);
     assert(patched == NULL);
     assert(patched_length == 0);
+static void test_patch_rejects_non_monotonic_chunks(void) {
+    const size_t page_size = 4096;
+
+    gdsl_diff_result_t diff = {0};
+    diff.header.page_size = page_size;
+    diff.header.target_length = page_size * 2;
+    diff.header.chunk_count = 2;
+    diff.chunk_count = 2;
+
+    diff.chunks = (gdsl_diff_chunk_t *)malloc(sizeof(gdsl_diff_chunk_t) * 2);
+    diff.payload_length = 20;
+    diff.payload = (uint8_t *)malloc(diff.payload_length);
+    assert(diff.chunks && diff.payload);
+    memset(diff.payload, 0xAB, diff.payload_length);
+
+    diff.chunks[0].page_index = 1;
+    diff.chunks[0].length = 10;
+    diff.chunks[0].data_offset = 0;
+
+    diff.chunks[1].page_index = 1; /* Duplicate page index */
+    diff.chunks[1].length = 10;
+    diff.chunks[1].data_offset = 10;
+
+    uint8_t *patched = NULL;
+    size_t patched_length = 0;
+    int rc = gdsl_patch(NULL, 0, &diff, &patched, &patched_length);
+    assert(rc == -1);
+
+    free(patched);
+    free(diff.payload);
+    free(diff.chunks);
+}
+
+static void test_patch_rejects_overlapping_chunks(void) {
+    const size_t page_size = 4096;
+
+    gdsl_diff_result_t diff = {0};
+    diff.header.page_size = page_size;
+    diff.header.target_length = page_size * 2;
+    diff.header.chunk_count = 2;
+    diff.chunk_count = 2;
+
+    diff.chunks = (gdsl_diff_chunk_t *)malloc(sizeof(gdsl_diff_chunk_t) * 2);
+    diff.payload_length = 5100;
+    diff.payload = (uint8_t *)malloc(diff.payload_length);
+    assert(diff.chunks && diff.payload);
+    memset(diff.payload, 0xCD, diff.payload_length);
+
+    diff.chunks[0].page_index = 0;
+    diff.chunks[0].length = 5000; /* Extends into the next page */
+    diff.chunks[0].data_offset = 0;
+
+    diff.chunks[1].page_index = 1;
+    diff.chunks[1].length = 100;
+    diff.chunks[1].data_offset = 5000;
+
+    uint8_t *patched = NULL;
+    size_t patched_length = 0;
+    int rc = gdsl_patch(NULL, 0, &diff, &patched, &patched_length);
+    assert(rc == -1);
+
+    free(patched);
+    free(diff.payload);
+    free(diff.chunks);
 }
 
 int main(void) {
     test_diff_roundtrip();
     test_diff_handles_shrinking();
     test_rejects_invalid_metadata();
+    test_patch_rejects_non_monotonic_chunks();
+    test_patch_rejects_overlapping_chunks();
     puts("All diff tests completed.");
     return 0;
 }
