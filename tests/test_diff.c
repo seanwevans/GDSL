@@ -85,6 +85,35 @@ static void test_diff_handles_shrinking(void) {
     free(target);
 }
 
+static void test_diff_rejects_excessive_chunks(void) {
+    const size_t page_size = 4096;
+    const size_t page_count = 3;
+    const size_t length = page_size * page_count;
+
+    uint8_t *base = (uint8_t *)calloc(length, 1);
+    uint8_t *target = (uint8_t *)malloc(length);
+    assert(base && target);
+
+    memset(target, 1, length);
+
+    /* Force a small chunk limit so we can hit the overflow path without
+       allocating enormous buffers. */
+    int rc = setenv("GDSL_DIFF_CHUNK_LIMIT", "2", 1);
+    assert(rc == 0);
+
+    gdsl_diff_result_t diff;
+    rc = gdsl_diff(base, length, target, length, &diff);
+    assert(rc != 0);
+    assert(diff.chunk_count == 0);
+    assert(diff.header.chunk_count == 0);
+    assert(diff.payload == NULL);
+    assert(diff.payload_length == 0);
+    assert(diff.chunks == NULL);
+
+    unsetenv("GDSL_DIFF_CHUNK_LIMIT");
+
+    free(base);
+    free(target);
 static void test_rejects_invalid_metadata(void) {
     gdsl_diff_result_t diff;
     memset(&diff, 0, sizeof(diff));
@@ -192,6 +221,7 @@ static void test_patch_rejects_overlapping_chunks(void) {
 int main(void) {
     test_diff_roundtrip();
     test_diff_handles_shrinking();
+    test_diff_rejects_excessive_chunks();
     test_rejects_invalid_metadata();
     test_patch_rejects_non_monotonic_chunks();
     test_patch_rejects_overlapping_chunks();

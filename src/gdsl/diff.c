@@ -4,6 +4,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define GDSL_DIFF_VERSION 1u
+#define GDSL_DEFAULT_PAGE_SIZE 4096u
+
+static uint32_t read_chunk_limit(void) {
+    const char *limit_env = getenv("GDSL_DIFF_CHUNK_LIMIT");
+    if (!limit_env || *limit_env == '\0') {
+        return UINT32_MAX;
+    }
+
+    char *endptr = NULL;
+    unsigned long long parsed = strtoull(limit_env, &endptr, 10);
+    if (!endptr || *endptr != '\0') {
+        return UINT32_MAX;
+    }
+
+    if (parsed > UINT32_MAX) {
+        return UINT32_MAX;
+    }
+
+    return (uint32_t)parsed;
+}
+
 static size_t page_count_for_length(size_t length, size_t page_size) {
     if (length == 0) {
         return 0;
@@ -210,6 +232,12 @@ int gdsl_diff(const uint8_t *base,
 
         payload_offset += target_span;
         emitted++;
+    }
+
+    uint32_t chunk_limit = read_chunk_limit();
+    if (emitted > chunk_limit) {
+        gdsl_diff_result_destroy(out);
+        return -1;
     }
 
     out->chunk_count = emitted;
