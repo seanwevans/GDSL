@@ -67,7 +67,32 @@ static void add_diagnostic(gdsl_verify_report_t *report,
                            gdsl_verify_severity_t severity,
                            const char *fmt,
                            ...) {
-    if (!report || report->diagnostic_count >= GDSL_VERIFY_MAX_DIAGNOSTICS) {
+    if (!report) {
+        return;
+    }
+
+    if (report->diagnostic_count >= GDSL_VERIFY_MAX_DIAGNOSTICS) {
+        if (!report->diagnostics_overflow && report->diagnostic_count > 0) {
+            gdsl_verify_diagnostic_t *last =
+                &report->diagnostics[GDSL_VERIFY_MAX_DIAGNOSTICS - 1];
+            gdsl_verify_severity_t old_severity = last->severity;
+
+            last->instruction_index = instruction_index;
+            last->severity = GDSL_VERIFY_SEVERITY_WARNING;
+            snprintf(last->message, GDSL_VERIFY_MAX_MESSAGE,
+                     "diagnostics truncated");
+
+            if (old_severity == GDSL_VERIFY_SEVERITY_ERROR) {
+                report->error_count--;
+                report->warning_count++;
+            } else if (old_severity == GDSL_VERIFY_SEVERITY_INFO) {
+                report->info_count--;
+                report->warning_count++;
+            }
+        }
+
+        report->diagnostics_overflow = 1;
+        report->success = 0;
         return;
     }
 
@@ -273,6 +298,7 @@ int gdsl_verify(const uint8_t *stream,
                        "stream did not reach END_STREAM/END_PROGRAM");
     }
 
-    report->success = (report->error_count == 0);
+    report->success = (report->error_count == 0 &&
+                       !report->diagnostics_overflow);
     return 0;
 }
