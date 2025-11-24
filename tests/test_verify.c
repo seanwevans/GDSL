@@ -91,11 +91,29 @@ static void test_snapshot_constraints(void) {
     assert(report.error_count >= 1);
 }
 
+static void test_invalid_level(void) {
+    const uint8_t stream[] = {
+        0x01, /* BEGIN_STREAM */
+        0x05, /* END_STREAM */
+        0x06  /* END_PROGRAM */
+    };
+
+    gdsl_verify_report_t report;
+    int rc = gdsl_verify(stream, sizeof(stream), (gdsl_verify_level_t)99, &report);
+    assert(rc == -1);
+    print_report("invalid_level", &report);
+    assert(!report.success);
+    assert(report.error_count == 1);
+    assert(report.diagnostic_count == 1);
+    assert(strstr(report.diagnostics[0].message, "invalid verification level") != NULL);
+}
+
 int main(void) {
     test_valid_program();
     test_missing_begin();
     test_unknown_opcode();
     test_snapshot_constraints();
+    test_invalid_level();
     puts("All verify tests completed.");
     return 0;
 }

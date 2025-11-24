@@ -109,6 +109,15 @@ int gdsl_verify(const uint8_t *stream,
     memset(report, 0, sizeof(*report));
     report->success = 0;
 
+    if (level < GDSL_VERIFY_LEVEL_SYNTAX || level > GDSL_VERIFY_LEVEL_DOMAIN) {
+        add_diagnostic(report,
+                       0,
+                       GDSL_VERIFY_SEVERITY_ERROR,
+                       "invalid verification level %d",
+                       (int)level);
+        return -1;
+    }
+
     if (!stream && length > 0) {
         add_diagnostic(report, 0, GDSL_VERIFY_SEVERITY_ERROR,
                        "null stream pointer with non-zero length");
