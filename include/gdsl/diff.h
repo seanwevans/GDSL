@@ -22,6 +22,13 @@ typedef struct {
     size_t data_offset;
 } gdsl_diff_chunk_t;
 
+/*
+ * Chunks in a diff must be ordered by strictly increasing page_index. When
+ * expanded using the diff header's page_size, each chunk describes the byte
+ * interval [page_index * page_size, page_index * page_size + length), and
+ * these intervals must not overlap.
+ */
+
 typedef struct {
     gdsl_diff_header_t header;
     gdsl_diff_chunk_t *chunks;
