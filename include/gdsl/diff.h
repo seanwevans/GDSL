@@ -8,6 +8,10 @@
 extern "C" {
 #endif
 
+#define GDSL_DIFF_VERSION 1u
+#define GDSL_DEFAULT_PAGE_SIZE 4096u
+#define GDSL_MAX_PAGE_SIZE (1u << 20)
+
 typedef struct {
     uint32_t version;
     uint32_t page_size;

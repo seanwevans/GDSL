@@ -85,9 +85,50 @@ static void test_diff_handles_shrinking(void) {
     free(target);
 }
 
+static void test_rejects_invalid_metadata(void) {
+    gdsl_diff_result_t diff;
+    memset(&diff, 0, sizeof(diff));
+
+    /* Mismatched version */
+    diff.header.version = GDSL_DIFF_VERSION + 1;
+    diff.header.page_size = GDSL_DEFAULT_PAGE_SIZE;
+    diff.header.target_length = 1;
+    uint8_t *patched = (uint8_t *)0x1;
+    size_t patched_length = 123;
+    int rc = gdsl_patch(NULL, 0, &diff, &patched, &patched_length);
+    assert(rc != 0);
+    assert(patched == NULL);
+    assert(patched_length == 0);
+
+    /* Zero page size */
+    memset(&diff, 0, sizeof(diff));
+    diff.header.version = GDSL_DIFF_VERSION;
+    diff.header.page_size = 0;
+    diff.header.target_length = 1;
+    patched = (uint8_t *)0x1;
+    patched_length = 123;
+    rc = gdsl_patch(NULL, 0, &diff, &patched, &patched_length);
+    assert(rc != 0);
+    assert(patched == NULL);
+    assert(patched_length == 0);
+
+    /* Implausibly large page size */
+    memset(&diff, 0, sizeof(diff));
+    diff.header.version = GDSL_DIFF_VERSION;
+    diff.header.page_size = GDSL_MAX_PAGE_SIZE + 1;
+    diff.header.target_length = 1;
+    patched = (uint8_t *)0x1;
+    patched_length = 123;
+    rc = gdsl_patch(NULL, 0, &diff, &patched, &patched_length);
+    assert(rc != 0);
+    assert(patched == NULL);
+    assert(patched_length == 0);
+}
+
 int main(void) {
     test_diff_roundtrip();
     test_diff_handles_shrinking();
+    test_rejects_invalid_metadata();
     puts("All diff tests completed.");
     return 0;
 }

@@ -4,9 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GDSL_DIFF_VERSION 1u
-#define GDSL_DEFAULT_PAGE_SIZE 4096u
-
 static size_t page_count_for_length(size_t length, size_t page_size) {
     if (length == 0) {
         return 0;
@@ -237,9 +234,16 @@ int gdsl_patch(const uint8_t *base,
     *out_buffer = NULL;
     *out_length = 0;
 
+    if (diff->header.version != GDSL_DIFF_VERSION) {
+        return -1;
+    }
+
+    if (diff->header.page_size == 0 || diff->header.page_size > GDSL_MAX_PAGE_SIZE) {
+        return -1;
+    }
+
     size_t target_length = diff->header.target_length;
-    size_t page_size = diff->header.page_size ? diff->header.page_size
-                                              : GDSL_DEFAULT_PAGE_SIZE;
+    size_t page_size = diff->header.page_size;
 
     if (diff->chunk_count > 0) {
         if (!diff->chunks) {
