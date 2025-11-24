@@ -262,9 +262,16 @@ int gdsl_patch(const uint8_t *base,
     *out_buffer = NULL;
     *out_length = 0;
 
+    if (diff->header.version != GDSL_DIFF_VERSION) {
+        return -1;
+    }
+
+    if (diff->header.page_size == 0 || diff->header.page_size > GDSL_MAX_PAGE_SIZE) {
+        return -1;
+    }
+
     size_t target_length = diff->header.target_length;
-    size_t page_size = diff->header.page_size ? diff->header.page_size
-                                              : GDSL_DEFAULT_PAGE_SIZE;
+    size_t page_size = diff->header.page_size;
 
     if (diff->chunk_count > 0) {
         if (!diff->chunks) {
@@ -297,10 +304,18 @@ int gdsl_patch(const uint8_t *base,
         memcpy(buffer, base, copy);
     }
 
+    size_t previous_page_index = 0;
+    size_t previous_end_offset = 0;
+    int have_previous = 0;
+
     for (size_t i = 0; i < diff->chunk_count; ++i) {
         const gdsl_diff_chunk_t *chunk = &diff->chunks[i];
         size_t page_offset = 0;
         if (checked_mul(chunk->page_index, page_size, &page_offset) != 0) {
+            free(buffer);
+            return -1;
+        }
+        if (have_previous && chunk->page_index <= previous_page_index) {
             free(buffer);
             return -1;
         }
@@ -313,10 +328,17 @@ int gdsl_patch(const uint8_t *base,
             free(buffer);
             return -1;
         }
+        if (have_previous && page_offset < previous_end_offset) {
+            free(buffer);
+            return -1;
+        }
         if (end_offset > target_length) {
             free(buffer);
             return -1;
         }
+        previous_page_index = chunk->page_index;
+        previous_end_offset = end_offset;
+        have_previous = 1;
         if (chunk->length > 0) {
             if (!diff->payload ||
                 chunk->data_offset > diff->payload_length) {
