@@ -112,12 +112,95 @@ static void test_invalid_level(void) {
     assert(strstr(report.diagnostics[0].message, "invalid verification level") != NULL);
 }
 
+static void test_trailing_opcode_after_end_program(void) {
+    const uint8_t stream[] = {
+        0x01, /* BEGIN_STREAM */
+        0x05, /* END_STREAM */
+        0x06, /* END_PROGRAM */
+        0x00  /* NOP (invalid trailing instruction) */
+    };
+
+    gdsl_verify_report_t report;
+    int rc = gdsl_verify(stream, sizeof(stream), GDSL_VERIFY_LEVEL_PHASE, &report);
+    assert(rc == 0);
+    print_report("trailing_after_end_program", &report);
+    assert(!report.success);
+    assert(report.instruction_count == 3);
+
+    int found_terminal_error = 0;
+    for (size_t i = 0; i < report.diagnostic_count; ++i) {
+        if (strstr(report.diagnostics[i].message, "END_PROGRAM must be terminal") != NULL) {
+            found_terminal_error = 1;
+            break;
+        }
+    }
+    assert(found_terminal_error);
+}
+
+static void test_end_stream_without_end_program(void) {
+    const uint8_t stream[] = {
+        0x01, /* BEGIN_STREAM */
+        0x05  /* END_STREAM */
+    };
+
+    gdsl_verify_report_t report;
+    int rc = gdsl_verify(stream, sizeof(stream), GDSL_VERIFY_LEVEL_PHASE, &report);
+    assert(rc == 0);
+    print_report("end_stream_without_end_program", &report);
+    assert(!report.success);
+
+    int found_missing_program = 0;
+    for (size_t i = 0; i < report.diagnostic_count; ++i) {
+        if (strstr(report.diagnostics[i].message, "missing END_PROGRAM") != NULL) {
+            found_missing_program = 1;
+            break;
+        }
+    }
+    assert(found_missing_program);
+}
+
+static void test_end_program_wrong_phase_with_extra_bytes(void) {
+    const uint8_t stream[] = {
+        0x01, /* BEGIN_STREAM */
+        0x06, /* END_PROGRAM (wrong phase) */
+        0x02  /* BARRIER (trailing byte) */
+    };
+
+    gdsl_verify_report_t report;
+    int rc = gdsl_verify(stream, sizeof(stream), GDSL_VERIFY_LEVEL_PHASE, &report);
+    assert(rc == 0);
+    print_report("end_program_wrong_phase_with_extra", &report);
+    assert(!report.success);
+    assert(report.instruction_count == 2);
+
+    int found_phase_error = 0;
+    int found_terminal_error = 0;
+    int found_unterminated_state = 0;
+    for (size_t i = 0; i < report.diagnostic_count; ++i) {
+        if (strstr(report.diagnostics[i].message, "END_PROGRAM not allowed in Finished phase") != NULL) {
+            found_phase_error = 1;
+        }
+        if (strstr(report.diagnostics[i].message, "END_PROGRAM must be terminal") != NULL) {
+            found_terminal_error = 1;
+        }
+        if (strstr(report.diagnostics[i].message, "unterminated program state") != NULL) {
+            found_unterminated_state = 1;
+        }
+    }
+    assert(found_phase_error);
+    assert(found_terminal_error);
+    assert(found_unterminated_state);
+}
+
 int main(void) {
     test_valid_program();
     test_missing_begin();
     test_unknown_opcode();
     test_snapshot_constraints();
     test_invalid_level();
+    test_trailing_opcode_after_end_program();
+    test_end_stream_without_end_program();
+    test_end_program_wrong_phase_with_extra_bytes();
     puts("All verify tests completed.");
     return 0;
 }
