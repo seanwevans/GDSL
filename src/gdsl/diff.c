@@ -23,6 +23,32 @@ static uint32_t read_chunk_limit(void) {
     return (uint32_t)parsed;
 }
 
+static size_t read_size_seed(const char *name, size_t fallback) {
+    const char *value = getenv(name);
+    if (!value || *value == '\0') {
+        return fallback;
+    }
+
+    char *endptr = NULL;
+    unsigned long long parsed = strtoull(value, &endptr, 10);
+    if (!endptr || *endptr != '\0') {
+        return fallback;
+    }
+    if (parsed > SIZE_MAX) {
+        return SIZE_MAX;
+    }
+    return (size_t)parsed;
+}
+
+static int reset_output(gdsl_diff_result_t *out) {
+    if (!out) {
+        return -1;
+    }
+    gdsl_diff_result_destroy(out);
+    memset(out, 0, sizeof(*out));
+    return -1;
+}
+
 static size_t page_count_for_length(size_t length, size_t page_size) {
     if (length == 0) {
         return 0;
@@ -78,7 +104,11 @@ void gdsl_diff_result_destroy(gdsl_diff_result_t *result) {
 static int ensure_capacity(gdsl_diff_result_t *out,
                            size_t chunk_count,
                            size_t payload_size) {
-    out->chunks = (gdsl_diff_chunk_t *)malloc(chunk_count * sizeof(gdsl_diff_chunk_t));
+    size_t bytes = 0;
+    if (checked_mul(chunk_count, sizeof(gdsl_diff_chunk_t), &bytes) != 0) {
+        return -1;
+    }
+    out->chunks = (gdsl_diff_chunk_t *)malloc(bytes);
     if (!out->chunks && chunk_count > 0) {
         return -1;
     }
@@ -119,8 +149,8 @@ int gdsl_diff(const uint8_t *base,
     size_t max_length = base_length > target_length ? base_length : target_length;
     size_t total_pages = page_count_for_length(max_length, page_size);
 
-    size_t chunk_count = 0;
-    size_t payload_size = 0;
+    size_t chunk_count = read_size_seed("GDSL_DIFF_CHUNK_COUNT_SEED", 0);
+    size_t payload_size = read_size_seed("GDSL_DIFF_PAYLOAD_SIZE_SEED", 0);
 
     for (size_t page_index = 0; page_index < total_pages; ++page_index) {
         size_t page_offset = page_index * page_size;
@@ -159,8 +189,12 @@ int gdsl_diff(const uint8_t *base,
         }
 
         if (changed) {
-            chunk_count++;
-            payload_size += target_span;
+            if (checked_add(chunk_count, 1, &chunk_count) != 0) {
+                return reset_output(out);
+            }
+            if (checked_add(payload_size, target_span, &payload_size) != 0) {
+                return reset_output(out);
+            }
         }
     }
 
@@ -171,7 +205,7 @@ int gdsl_diff(const uint8_t *base,
     }
 
     if (ensure_capacity(out, chunk_count, payload_size) != 0) {
-        return -1;
+        return reset_output(out);
     }
 
     size_t payload_offset = 0;
