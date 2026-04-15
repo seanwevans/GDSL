@@ -62,6 +62,23 @@ static void gdsl_state_reset(gdsl_state_t *state) {
     state->snapshot_active = 0;
 }
 
+static const char *phase_name(gdsl_phase_t phase) {
+    switch (phase) {
+    case GDSL_PHASE_BUILD:
+        return "Build";
+    case GDSL_PHASE_RECORD:
+        return "Record";
+    case GDSL_PHASE_SUBMITTED:
+        return "Submitted";
+    case GDSL_PHASE_IDLE:
+        return "Idle";
+    case GDSL_PHASE_FINISHED:
+        return "Finished";
+    default:
+        return "Unknown";
+    }
+}
+
 static void add_diagnostic(gdsl_verify_report_t *report,
                            size_t instruction_index,
                            gdsl_verify_severity_t severity,
@@ -118,9 +135,13 @@ static void add_diagnostic(gdsl_verify_report_t *report,
 static void report_transition_error(gdsl_verify_report_t *report,
                                     size_t index,
                                     const char *op,
+                                    gdsl_phase_t actual_phase,
                                     const char *expected) {
     add_diagnostic(report, index, GDSL_VERIFY_SEVERITY_ERROR,
-                   "%s not allowed in %s phase", op, expected);
+                   "%s requires %s, got %s",
+                   op,
+                   expected ? expected : "a valid phase",
+                   phase_name(actual_phase));
 }
 
 int gdsl_verify(const uint8_t *stream,
@@ -154,8 +175,11 @@ int gdsl_verify(const uint8_t *stream,
 
     size_t offset = 0;
     size_t instruction_index = 0;
+    int seen_end_stream = 0;
+    int seen_end_program = 0;
+    int stop_processing = 0;
 
-    while (offset < length) {
+    while (offset < length && !stop_processing) {
         uint8_t opcode = stream[offset];
         const gdsl_opcode_metadata_t *meta = &gdsl_opcode_table[opcode];
 
@@ -189,9 +213,8 @@ int gdsl_verify(const uint8_t *stream,
                     state.phase != GDSL_PHASE_IDLE) {
                     report_transition_error(report, instruction_index,
                                             meta->name,
-                                            state.phase == GDSL_PHASE_RECORD
-                                                ? "Record"
-                                                : "Idle");
+                                            state.phase,
+                                            "Build or Idle");
                 }
             }
             state.phase = GDSL_PHASE_RECORD;
@@ -200,7 +223,7 @@ int gdsl_verify(const uint8_t *stream,
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
                 state.phase != GDSL_PHASE_RECORD) {
                 report_transition_error(report, instruction_index,
-                                        meta->name, "Record");
+                                        meta->name, state.phase, "Record");
             }
             if (level >= GDSL_VERIFY_LEVEL_DOMAIN &&
                 state.domain != GDSL_DOMAIN_DEVICE) {
@@ -214,7 +237,7 @@ int gdsl_verify(const uint8_t *stream,
             if (level >= GDSL_VERIFY_LEVEL_PHASE) {
                 if (state.phase != GDSL_PHASE_RECORD) {
                     report_transition_error(report, instruction_index,
-                                            meta->name, "Record");
+                                            meta->name, state.phase, "Record");
                 }
                 if (state.snapshot_active) {
                     add_diagnostic(report, instruction_index,
@@ -229,7 +252,7 @@ int gdsl_verify(const uint8_t *stream,
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
                 state.phase != GDSL_PHASE_SUBMITTED) {
                 report_transition_error(report, instruction_index,
-                                        meta->name, "Submitted");
+                                        meta->name, state.phase, "Submitted");
             }
             state.phase = GDSL_PHASE_IDLE;
             state.domain = GDSL_DOMAIN_HOST;
@@ -239,7 +262,7 @@ int gdsl_verify(const uint8_t *stream,
                 state.phase != GDSL_PHASE_IDLE &&
                 state.phase != GDSL_PHASE_RECORD) {
                 report_transition_error(report, instruction_index,
-                                        meta->name, "Idle");
+                                        meta->name, state.phase, "Record or Idle");
             }
             if (state.phase == GDSL_PHASE_RECORD && level >= GDSL_VERIFY_LEVEL_PHASE) {
                 add_diagnostic(report, instruction_index,
@@ -247,12 +270,21 @@ int gdsl_verify(const uint8_t *stream,
                                "END_STREAM while GPU work still pending; assuming idle transition");
             }
             state.phase = GDSL_PHASE_FINISHED;
+            seen_end_stream = 1;
             break;
         case GDSL_OPCODE_END_PROGRAM:
+            seen_end_program = 1;
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
                 state.phase != GDSL_PHASE_FINISHED) {
                 report_transition_error(report, instruction_index,
-                                        meta->name, "Finished");
+                                        meta->name, state.phase, "Finished");
+            }
+            if (offset + meta->size < length) {
+                add_diagnostic(report,
+                               instruction_index,
+                               GDSL_VERIFY_SEVERITY_ERROR,
+                               "END_PROGRAM must be terminal; trailing bytes detected");
+                stop_processing = 1;
             }
             break;
         case GDSL_OPCODE_SNAPSHOT_BEGIN:
@@ -264,7 +296,7 @@ int gdsl_verify(const uint8_t *stream,
                 }
                 if (state.phase != GDSL_PHASE_IDLE) {
                     report_transition_error(report, instruction_index,
-                                            meta->name, "Idle");
+                                            meta->name, state.phase, "Idle");
                 }
                 if (state.domain != GDSL_DOMAIN_HOST) {
                     add_diagnostic(report, instruction_index,
@@ -286,7 +318,7 @@ int gdsl_verify(const uint8_t *stream,
             if (level >= GDSL_VERIFY_LEVEL_DOMAIN &&
                 state.phase != GDSL_PHASE_IDLE) {
                 report_transition_error(report, instruction_index,
-                                        meta->name, "Idle");
+                                        meta->name, state.phase, "Idle");
             }
             break;
         default:
@@ -302,9 +334,17 @@ int gdsl_verify(const uint8_t *stream,
                        "unterminated snapshot region");
     }
 
-    if (state.phase != GDSL_PHASE_FINISHED) {
+    if (!seen_end_program) {
+        if (!seen_end_stream) {
+            add_diagnostic(report, instruction_index, GDSL_VERIFY_SEVERITY_ERROR,
+                           "missing END_STREAM");
+        } else {
+            add_diagnostic(report, instruction_index, GDSL_VERIFY_SEVERITY_ERROR,
+                           "missing END_PROGRAM");
+        }
+    } else if (state.phase != GDSL_PHASE_FINISHED) {
         add_diagnostic(report, instruction_index, GDSL_VERIFY_SEVERITY_ERROR,
-                       "stream did not reach END_STREAM/END_PROGRAM");
+                       "unterminated program state");
     }
 
     report->success = (report->error_count == 0 &&
