@@ -4,9 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GDSL_DIFF_VERSION 1u
-#define GDSL_DEFAULT_PAGE_SIZE 4096u
-
 static uint32_t read_chunk_limit(void) {
     const char *limit_env = getenv("GDSL_DIFF_CHUNK_LIMIT");
     if (!limit_env || *limit_env == '\0') {
@@ -393,4 +390,3 @@ int gdsl_read_changed_set(const gdsl_diff_result_t *diff,
     *out_count = unique_pages;
     return 0;
 }
-
