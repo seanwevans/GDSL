@@ -52,6 +52,8 @@ static void test_missing_begin(void) {
     print_report("missing_begin", &report);
     assert(!report.success);
     assert(report.error_count > 0);
+    assert(strstr(report.diagnostics[0].message,
+                  "SUBMIT requires Record, got Build") != NULL);
 }
 
 static void test_unknown_opcode(void) {
@@ -89,6 +91,8 @@ static void test_snapshot_constraints(void) {
     print_report("snapshot", &report);
     assert(!report.success);
     assert(report.error_count >= 1);
+    assert(strstr(report.diagnostics[0].message,
+                  "SNAPSHOT_BEGIN requires Idle, got Submitted") != NULL);
 }
 
 static void test_invalid_level(void) {
