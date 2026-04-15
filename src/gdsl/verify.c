@@ -154,8 +154,11 @@ int gdsl_verify(const uint8_t *stream,
 
     size_t offset = 0;
     size_t instruction_index = 0;
+    int seen_end_stream = 0;
+    int seen_end_program = 0;
+    int stop_processing = 0;
 
-    while (offset < length) {
+    while (offset < length && !stop_processing) {
         uint8_t opcode = stream[offset];
         const gdsl_opcode_metadata_t *meta = &gdsl_opcode_table[opcode];
 
@@ -247,12 +250,21 @@ int gdsl_verify(const uint8_t *stream,
                                "END_STREAM while GPU work still pending; assuming idle transition");
             }
             state.phase = GDSL_PHASE_FINISHED;
+            seen_end_stream = 1;
             break;
         case GDSL_OPCODE_END_PROGRAM:
+            seen_end_program = 1;
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
                 state.phase != GDSL_PHASE_FINISHED) {
                 report_transition_error(report, instruction_index,
                                         meta->name, "Finished");
+            }
+            if (offset + meta->size < length) {
+                add_diagnostic(report,
+                               instruction_index,
+                               GDSL_VERIFY_SEVERITY_ERROR,
+                               "END_PROGRAM must be terminal; trailing bytes detected");
+                stop_processing = 1;
             }
             break;
         case GDSL_OPCODE_SNAPSHOT_BEGIN:
@@ -302,9 +314,17 @@ int gdsl_verify(const uint8_t *stream,
                        "unterminated snapshot region");
     }
 
-    if (state.phase != GDSL_PHASE_FINISHED) {
+    if (!seen_end_program) {
+        if (!seen_end_stream) {
+            add_diagnostic(report, instruction_index, GDSL_VERIFY_SEVERITY_ERROR,
+                           "missing END_STREAM");
+        } else {
+            add_diagnostic(report, instruction_index, GDSL_VERIFY_SEVERITY_ERROR,
+                           "missing END_PROGRAM");
+        }
+    } else if (state.phase != GDSL_PHASE_FINISHED) {
         add_diagnostic(report, instruction_index, GDSL_VERIFY_SEVERITY_ERROR,
-                       "stream did not reach END_STREAM/END_PROGRAM");
+                       "unterminated program state");
     }
 
     report->success = (report->error_count == 0 &&
