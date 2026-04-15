@@ -114,6 +114,8 @@ static void test_diff_rejects_excessive_chunks(void) {
 
     free(base);
     free(target);
+}
+
 static void test_rejects_invalid_metadata(void) {
     gdsl_diff_result_t diff;
     memset(&diff, 0, sizeof(diff));
@@ -152,6 +154,8 @@ static void test_rejects_invalid_metadata(void) {
     assert(rc != 0);
     assert(patched == NULL);
     assert(patched_length == 0);
+}
+
 static void test_patch_rejects_non_monotonic_chunks(void) {
     const size_t page_size = 4096;
 
