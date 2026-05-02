@@ -23,6 +23,7 @@ static uint32_t read_chunk_limit(void) {
     return (uint32_t)parsed;
 }
 
+#ifdef GDSL_TESTING
 static size_t read_size_seed(const char *name, size_t fallback) {
     const char *value = getenv(name);
     if (!value || *value == '\0') {
@@ -39,6 +40,7 @@ static size_t read_size_seed(const char *name, size_t fallback) {
     }
     return (size_t)parsed;
 }
+#endif
 
 static int reset_output(gdsl_diff_result_t *out) {
     if (!out) {
@@ -132,6 +134,7 @@ int gdsl_diff(const uint8_t *base,
         return -1;
     }
 
+    gdsl_diff_result_destroy(out);
     memset(out, 0, sizeof(*out));
     out->header.version = GDSL_DIFF_VERSION;
     out->header.page_size = GDSL_DEFAULT_PAGE_SIZE;
@@ -149,8 +152,12 @@ int gdsl_diff(const uint8_t *base,
     size_t max_length = base_length > target_length ? base_length : target_length;
     size_t total_pages = page_count_for_length(max_length, page_size);
 
-    size_t chunk_count = read_size_seed("GDSL_DIFF_CHUNK_COUNT_SEED", 0);
-    size_t payload_size = read_size_seed("GDSL_DIFF_PAYLOAD_SIZE_SEED", 0);
+    size_t chunk_count = 0;
+    size_t payload_size = 0;
+#ifdef GDSL_TESTING
+    chunk_count = read_size_seed("GDSL_DIFF_CHUNK_COUNT_SEED", chunk_count);
+    payload_size = read_size_seed("GDSL_DIFF_PAYLOAD_SIZE_SEED", payload_size);
+#endif
 
     for (size_t page_index = 0; page_index < total_pages; ++page_index) {
         size_t page_offset = page_index * page_size;

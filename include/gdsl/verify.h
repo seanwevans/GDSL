@@ -41,6 +41,13 @@ typedef struct {
     gdsl_verify_diagnostic_t diagnostics[GDSL_VERIFY_MAX_DIAGNOSTICS];
 } gdsl_verify_report_t;
 
+/*
+ * API compatibility note (v1.0):
+ * - gdsl_verify(...) validates only the opcode subset implemented by
+ *   gdsl_opcode_t/gdsl_opcode_table in src/gdsl/verify.c.
+ * - Opcodes outside that v1 subset are reported as unknown opcode errors.
+ * - Future versions may expand accepted opcodes without changing this API.
+ */
 int gdsl_verify(const uint8_t *stream,
                 size_t length,
                 gdsl_verify_level_t level,
