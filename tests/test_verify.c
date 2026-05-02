@@ -192,6 +192,26 @@ static void test_end_program_wrong_phase_with_extra_bytes(void) {
     assert(found_unterminated_state);
 }
 
+static void test_diagnostic_overflow_preserves_existing_entries(void) {
+    uint8_t stream[GDSL_VERIFY_MAX_DIAGNOSTICS + 5];
+    memset(stream, 0xFF, sizeof(stream)); /* unknown opcodes => one error each */
+    stream[GDSL_VERIFY_MAX_DIAGNOSTICS + 3] = 0x01; /* BEGIN_STREAM */
+    stream[GDSL_VERIFY_MAX_DIAGNOSTICS + 4] = 0x06; /* END_PROGRAM */
+
+    gdsl_verify_report_t report;
+    int rc = gdsl_verify(stream, sizeof(stream), GDSL_VERIFY_LEVEL_SYNTAX, &report);
+    assert(rc == 0);
+    print_report("overflow_preserve", &report);
+    assert(!report.success);
+    assert(report.diagnostics_overflow);
+    assert(report.diagnostic_count == GDSL_VERIFY_MAX_DIAGNOSTICS);
+    assert(report.dropped_diagnostic_count == 4);
+    assert(report.error_count == GDSL_VERIFY_MAX_DIAGNOSTICS);
+    assert(strstr(report.diagnostics[0].message, "unknown opcode 0xff") != NULL);
+    assert(strstr(report.diagnostics[GDSL_VERIFY_MAX_DIAGNOSTICS - 1].message,
+                  "unknown opcode 0xff") != NULL);
+}
+
 int main(void) {
     test_valid_program();
     test_missing_begin();
@@ -201,6 +221,7 @@ int main(void) {
     test_trailing_opcode_after_end_program();
     test_end_stream_without_end_program();
     test_end_program_wrong_phase_with_extra_bytes();
+    test_diagnostic_overflow_preserves_existing_entries();
     puts("All verify tests completed.");
     return 0;
 }
