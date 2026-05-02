@@ -132,6 +132,7 @@ int gdsl_diff(const uint8_t *base,
         return -1;
     }
 
+    gdsl_diff_result_destroy(out);
     memset(out, 0, sizeof(*out));
     out->header.version = GDSL_DIFF_VERSION;
     out->header.page_size = GDSL_DEFAULT_PAGE_SIZE;
