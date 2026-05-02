@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
     int success;
     int diagnostics_overflow;
+    size_t dropped_diagnostic_count;
     size_t instruction_count;
     size_t error_count;
     size_t warning_count;
