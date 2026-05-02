@@ -177,7 +177,7 @@ static void test_end_program_wrong_phase_with_extra_bytes(void) {
     int found_terminal_error = 0;
     int found_unterminated_state = 0;
     for (size_t i = 0; i < report.diagnostic_count; ++i) {
-        if (strstr(report.diagnostics[i].message, "END_PROGRAM not allowed in Finished phase") != NULL) {
+        if (strstr(report.diagnostics[i].message, "END_PROGRAM requires Finished, got Record") != NULL) {
             found_phase_error = 1;
         }
         if (strstr(report.diagnostics[i].message, "END_PROGRAM must be terminal") != NULL) {

@@ -202,12 +202,14 @@ int gdsl_verify(const uint8_t *stream,
         report->instruction_count++;
 
         switch (opcode) {
-        case GDSL_OPCODE_BEGIN_STREAM:
+        case GDSL_OPCODE_BEGIN_STREAM: {
+            int phase_ok = 1;
             if (level >= GDSL_VERIFY_LEVEL_PHASE) {
                 if (state.snapshot_active) {
                     add_diagnostic(report, instruction_index,
                                    GDSL_VERIFY_SEVERITY_ERROR,
                                    "cannot BEGIN_STREAM while snapshot is active");
+                    phase_ok = 0;
                 }
                 if (state.phase != GDSL_PHASE_BUILD &&
                     state.phase != GDSL_PHASE_IDLE) {
@@ -215,10 +217,14 @@ int gdsl_verify(const uint8_t *stream,
                                             meta->name,
                                             state.phase,
                                             "Build or Idle");
+                    phase_ok = 0;
                 }
             }
-            state.phase = GDSL_PHASE_RECORD;
+            if (phase_ok) {
+                state.phase = GDSL_PHASE_RECORD;
+            }
             break;
+        }
         case GDSL_OPCODE_BARRIER:
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
                 state.phase != GDSL_PHASE_RECORD) {
@@ -233,45 +239,61 @@ int gdsl_verify(const uint8_t *stream,
                 state.domain = GDSL_DOMAIN_DEVICE;
             }
             break;
-        case GDSL_OPCODE_SUBMIT:
+        case GDSL_OPCODE_SUBMIT: {
+            int phase_ok = 1;
             if (level >= GDSL_VERIFY_LEVEL_PHASE) {
                 if (state.phase != GDSL_PHASE_RECORD) {
                     report_transition_error(report, instruction_index,
                                             meta->name, state.phase, "Record");
+                    phase_ok = 0;
                 }
                 if (state.snapshot_active) {
                     add_diagnostic(report, instruction_index,
                                    GDSL_VERIFY_SEVERITY_ERROR,
                                    "cannot SUBMIT inside a snapshot");
+                    phase_ok = 0;
                 }
             }
-            state.phase = GDSL_PHASE_SUBMITTED;
-            state.domain = GDSL_DOMAIN_DEVICE;
+            if (phase_ok) {
+                state.phase = GDSL_PHASE_SUBMITTED;
+                state.domain = GDSL_DOMAIN_DEVICE;
+            }
             break;
-        case GDSL_OPCODE_FENCE_WAIT:
+        }
+        case GDSL_OPCODE_FENCE_WAIT: {
+            int phase_ok = 1;
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
                 state.phase != GDSL_PHASE_SUBMITTED) {
                 report_transition_error(report, instruction_index,
                                         meta->name, state.phase, "Submitted");
+                phase_ok = 0;
             }
-            state.phase = GDSL_PHASE_IDLE;
-            state.domain = GDSL_DOMAIN_HOST;
+            if (phase_ok) {
+                state.phase = GDSL_PHASE_IDLE;
+                state.domain = GDSL_DOMAIN_HOST;
+            }
             break;
-        case GDSL_OPCODE_END_STREAM:
+        }
+        case GDSL_OPCODE_END_STREAM: {
+            int phase_ok = 1;
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
                 state.phase != GDSL_PHASE_IDLE &&
                 state.phase != GDSL_PHASE_RECORD) {
                 report_transition_error(report, instruction_index,
                                         meta->name, state.phase, "Record or Idle");
+                phase_ok = 0;
             }
             if (state.phase == GDSL_PHASE_RECORD && level >= GDSL_VERIFY_LEVEL_PHASE) {
                 add_diagnostic(report, instruction_index,
                                GDSL_VERIFY_SEVERITY_WARNING,
                                "END_STREAM while GPU work still pending; assuming idle transition");
             }
-            state.phase = GDSL_PHASE_FINISHED;
-            seen_end_stream = 1;
+            if (phase_ok) {
+                state.phase = GDSL_PHASE_FINISHED;
+                seen_end_stream = 1;
+            }
             break;
+        }
         case GDSL_OPCODE_END_PROGRAM:
             seen_end_program = 1;
             if (level >= GDSL_VERIFY_LEVEL_PHASE &&
@@ -287,33 +309,46 @@ int gdsl_verify(const uint8_t *stream,
                 stop_processing = 1;
             }
             break;
-        case GDSL_OPCODE_SNAPSHOT_BEGIN:
+        case GDSL_OPCODE_SNAPSHOT_BEGIN: {
+            int phase_ok = 1;
+            int domain_ok = 1;
             if (level >= GDSL_VERIFY_LEVEL_DOMAIN) {
                 if (state.snapshot_active) {
                     add_diagnostic(report, instruction_index,
                                    GDSL_VERIFY_SEVERITY_ERROR,
                                    "nested SNAPSHOT_BEGIN not allowed");
+                    phase_ok = 0;
                 }
                 if (state.phase != GDSL_PHASE_IDLE) {
                     report_transition_error(report, instruction_index,
                                             meta->name, state.phase, "Idle");
+                    phase_ok = 0;
                 }
                 if (state.domain != GDSL_DOMAIN_HOST) {
                     add_diagnostic(report, instruction_index,
                                    GDSL_VERIFY_SEVERITY_ERROR,
                                    "snapshots require host domain but current domain is device");
+                    domain_ok = 0;
                 }
             }
-            state.snapshot_active = 1;
+            if (phase_ok && domain_ok) {
+                state.snapshot_active = 1;
+            }
             break;
-        case GDSL_OPCODE_SNAPSHOT_END:
+        }
+        case GDSL_OPCODE_SNAPSHOT_END: {
+            int phase_ok = 1;
             if (level >= GDSL_VERIFY_LEVEL_DOMAIN && !state.snapshot_active) {
                 add_diagnostic(report, instruction_index,
                                GDSL_VERIFY_SEVERITY_ERROR,
                                "SNAPSHOT_END without SNAPSHOT_BEGIN");
+                phase_ok = 0;
             }
-            state.snapshot_active = 0;
+            if (phase_ok) {
+                state.snapshot_active = 0;
+            }
             break;
+        }
         case GDSL_OPCODE_CHECKPOINT:
             if (level >= GDSL_VERIFY_LEVEL_DOMAIN &&
                 state.phase != GDSL_PHASE_IDLE) {
