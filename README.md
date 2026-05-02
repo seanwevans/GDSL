@@ -24,6 +24,29 @@ The verifier implements three tiers of checking:
 
 All opcodes have fixed size in v1. Instruction length is obtained from `gdsl_opcode_table[opcode].size`. This table is statically initialized and must be consistent across all verifier invocations.
 
+### Opcode Coverage Direction (v1 vs planned)
+
+This repository currently follows **Option A (short-term)**: keep the implementation scope explicit and treat the broader formal opcode universe as future work.
+
+#### Implemented in v1 (`gdsl_opcode_t` in `src/gdsl/verify.c`)
+
+| Hex | Opcode |
+|-----|--------|
+| `0x00` | `NOP` |
+| `0x01` | `BEGIN_STREAM` |
+| `0x02` | `BARRIER` |
+| `0x03` | `SUBMIT` |
+| `0x04` | `FENCE_WAIT` |
+| `0x05` | `END_STREAM` |
+| `0x06` | `END_PROGRAM` |
+| `0x07` | `SNAPSHOT_BEGIN` |
+| `0x08` | `SNAPSHOT_END` |
+| `0x09` | `CHECKPOINT` |
+
+#### Planned / future opcode coverage
+
+The larger opcode set documented below in **Opcode Universe** (memory, pipeline, rendering, synchronization extensions, control flow, utilities, etc.) is a **planned roadmap target**, not fully implemented in the current verifier build.
+
 ---
 
 ## 1. Abstract Syntax

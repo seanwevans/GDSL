@@ -41,6 +41,12 @@
 
 ## Verification Pipeline
 
+## v1 Implementation Scope (Explicit Direction)
+
+Current direction is **Option A (short-term)**:
+- The verifier implementation currently accepts the compact v1 opcode subset from `gdsl_opcode_t` in `src/gdsl/verify.c`.
+- The broader 100+ opcode formal universe shown in the spec diagrams is roadmap material and not yet fully wired into `gdsl_opcode_table`.
+
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  User writes .gdsl file or builds stream programmatically│
@@ -372,4 +378,3 @@ v2 (Multi-Queue, Multi-Device)
 | Testability | 5 bad + 1 good | ✅ |
 | Extensibility | Reserved opcodes 0xC0–0xFF | ✅ |
 | Performance | L2 < 500 µs/MB, cached < 1 µs | Target |
-
