@@ -38,7 +38,7 @@ static void test_diff_roundtrip(void) {
     fill_pattern(target + 1024, 128, 42);
     fill_pattern(target + 4096, 4096, 9);
 
-    gdsl_diff_result_t diff;
+    gdsl_diff_result_t diff = {0};
     int rc = gdsl_diff(base, base_length, target, target_length, &diff);
     assert(rc == 0);
     assert(diff.chunk_count >= 1);
@@ -62,6 +62,43 @@ static void test_diff_roundtrip(void) {
     free(target);
 }
 
+
+static void test_diff_reuses_result_storage(void) {
+    const size_t length = 4096;
+    uint8_t *base = (uint8_t *)malloc(length);
+    uint8_t *target1 = (uint8_t *)malloc(length);
+    uint8_t *target2 = (uint8_t *)malloc(length);
+    assert(base && target1 && target2);
+
+    fill_pattern(base, length, 5);
+    memcpy(target1, base, length);
+    memcpy(target2, base, length);
+    target1[0] ^= 0x5A;
+    target2[length - 1] ^= 0xA5;
+
+    gdsl_diff_result_t diff = {0};
+    int rc = gdsl_diff(base, length, target1, length, &diff);
+    assert(rc == 0);
+    assert(diff.chunk_count >= 1);
+
+    rc = gdsl_diff(base, length, target2, length, &diff);
+    assert(rc == 0);
+    assert(diff.chunk_count >= 1);
+
+    uint8_t *patched = NULL;
+    size_t patched_length = 0;
+    rc = gdsl_patch(base, length, &diff, &patched, &patched_length);
+    assert(rc == 0);
+    assert(patched_length == length);
+    assert(memcmp(patched, target2, length) == 0);
+
+    free(patched);
+    gdsl_diff_result_destroy(&diff);
+    free(base);
+    free(target1);
+    free(target2);
+}
+
 static void test_diff_handles_shrinking(void) {
     const size_t base_length = 8192;
     const size_t target_length = 2048;
@@ -73,7 +110,7 @@ static void test_diff_handles_shrinking(void) {
     memset(base, 7, base_length);
     memset(target, 3, target_length);
 
-    gdsl_diff_result_t diff;
+    gdsl_diff_result_t diff = {0};
     int rc = gdsl_diff(base, base_length, target, target_length, &diff);
     assert(rc == 0);
 
@@ -102,7 +139,7 @@ static void test_diff_rejects_excessive_chunks(void) {
 
     assert(setenv("GDSL_DIFF_CHUNK_LIMIT", "2", 1) == 0);
 
-    gdsl_diff_result_t diff;
+    gdsl_diff_result_t diff = {0};
     int rc = gdsl_diff(base, length, target, length, &diff);
     assert(rc != 0);
     assert(diff.chunk_count == 0);
@@ -119,7 +156,7 @@ static void test_diff_rejects_excessive_chunks(void) {
 static void test_diff_rejects_seeded_chunk_count_overflow(void) {
     uint8_t base[1] = {0};
     uint8_t target[1] = {1};
-    gdsl_diff_result_t diff;
+    gdsl_diff_result_t diff = {0};
 
     char seed[32];
     snprintf(seed, sizeof(seed), "%zu", SIZE_MAX);
@@ -135,7 +172,7 @@ static void test_diff_rejects_seeded_chunk_count_overflow(void) {
 static void test_diff_rejects_seeded_payload_overflow(void) {
     uint8_t base[1] = {0};
     uint8_t target[1] = {1};
-    gdsl_diff_result_t diff;
+    gdsl_diff_result_t diff = {0};
 
     char seed[32];
     snprintf(seed, sizeof(seed), "%zu", SIZE_MAX);
@@ -151,7 +188,7 @@ static void test_diff_rejects_seeded_payload_overflow(void) {
 static void test_diff_rejects_chunk_array_size_overflow(void) {
     uint8_t base[1] = {7};
     uint8_t target[1] = {7};
-    gdsl_diff_result_t diff;
+    gdsl_diff_result_t diff = {0};
 
     const size_t overflow_count = (SIZE_MAX / sizeof(gdsl_diff_chunk_t)) + 1;
     char seed[32];
@@ -166,7 +203,7 @@ static void test_diff_rejects_chunk_array_size_overflow(void) {
 }
 
 static void test_rejects_invalid_metadata(void) {
-    gdsl_diff_result_t diff;
+    gdsl_diff_result_t diff = {0};
     memset(&diff, 0, sizeof(diff));
 
     diff.header.version = GDSL_DIFF_VERSION + 1;
@@ -272,6 +309,7 @@ static void test_patch_rejects_overlapping_chunks(void) {
 
 int main(void) {
     test_diff_roundtrip();
+    test_diff_reuses_result_storage();
     test_diff_handles_shrinking();
     test_diff_rejects_excessive_chunks();
     test_diff_rejects_seeded_chunk_count_overflow();
